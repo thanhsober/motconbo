@@ -21,7 +21,7 @@
   .flame {
     width: 24px; height: 36px; background: #ff9d00; border-radius: 50% 50% 35% 35%;
     margin: 0 auto; filter: blur(1px); box-shadow: 0 0 20px #ff9d00, 0 0 40px #ff9d00;
-    animation: flicker 0.1s infinite alternate;
+    animation: flicker 0.1s infinite alternate; will-change: transform, opacity;
   }
   .flame.off { display: none; }
   .candle-stick { width: 16px; height: 70px; background: linear-gradient(to right, #e0e0e0, #fff, #b0b0b0); margin: 0 auto; border-radius: 4px; }
@@ -43,7 +43,7 @@
 
   /* MA TRẬN BACKGROUND */
   #matrixCanvas {
-    position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.85;
+    position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.85; pointer-events: none;
   }
 
   /* SVG TRÁI TIM PHÁT SÁNG */
@@ -54,22 +54,23 @@
   .svg-heart {
     width: 140px; height: 140px;
     fill: #ff69b4;
-    filter: drop-shadow(0 0 15px #ff69b4) drop-shadow(0 0 35px #ff1493) drop-shadow(0 0 60px #ffb6c1);
+    filter: drop-shadow(0 0 15px #ff69b4) drop-shadow(0 0 30px #ff1493);
     animation: heartBeat 1.2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+    will-change: transform;
   }
 
   @keyframes heartBeat {
     0% { transform: scale(1); }
-    14% { transform: scale(1.28); }
+    14% { transform: scale(1.25); }
     28% { transform: scale(1); }
-    42% { transform: scale(1.28); }
+    42% { transform: scale(1.25); }
     70% { transform: scale(1); }
   }
 
   .card {
     position: relative; z-index: 2; width: min(90vw, 450px); background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 20px; padding: 25px; text-align: center;
-    backdrop-filter: blur(10px); box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 15px 35px rgba(0,0,0,0.5);
   }
 
   /* BÁNH KEM & THÔNG TIN */
@@ -80,7 +81,8 @@
 
   .minimal-cake {
     width: 160px; height: 160px; margin-bottom: 10px;
-    animation: floatCake 3s ease-in-out infinite; filter: drop-shadow(0 15px 25px rgba(255, 182, 193, 0.35));
+    animation: floatCake 3s ease-in-out infinite; filter: drop-shadow(0 10px 20px rgba(255, 182, 193, 0.3));
+    will-change: transform;
   }
 
   @keyframes floatCake {
@@ -92,7 +94,7 @@
     font-size: 2.2rem; font-weight: 800; line-height: 1.2;
     background: linear-gradient(45deg, #ffd76a, #ff73a1, #ffffff); 
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
-    text-transform: uppercase; text-shadow: 0 0 25px rgba(255, 115, 161, 0.5);
+    text-transform: uppercase;
   }
   
   .hero-name { font-size: 1.2rem; color: #ffd76a; font-weight: 700; letter-spacing: 1.5px; margin-top: 8px; text-transform: uppercase; }
@@ -118,6 +120,7 @@
     width: 100%; height: 100%; border-radius: 50%; border: 4px solid #ffd76a;
     background: conic-gradient(#ff4b72 0 90deg, #3b82f6 90deg 180deg, #10b981 180deg 270deg, #f59e0b 270deg 360deg);
     transition: transform 4s cubic-bezier(0.15, 0.99, 0.18, 1); position: relative; overflow: hidden;
+    will-change: transform;
   }
   .wheel-label {
     position: absolute; width: 50%; height: 50%; transform-origin: 100% 100%;
@@ -132,7 +135,6 @@
   .wheel-pointer {
     position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
     width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-top: 18px solid #fff; z-index: 10;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
   }
   
   .wish-box { display: flex; gap: 8px; justify-content: center; margin-top: 15px; }
@@ -149,7 +151,7 @@
 </head>
 <body>
 
-<audio id="bgMusic" loop src="https://assets.mixkit.co/music/preview/mixkit-happy-birthday-to-you-433.mp3"></audio>
+<audio id="bgMusic" loop preload="auto" src="https://assets.mixkit.co/music/preview/mixkit-happy-birthday-to-you-433.mp3"></audio>
 
 <!-- MÀN 1: BÍ ẨN -->
 <div id="stage1">
@@ -241,7 +243,11 @@
   const techHeartWrapper = document.getElementById('techHeartWrapper');
   const stage2Content = document.getElementById('stage2Content');
   const bgMusic = document.getElementById('bgMusic');
+  
   let isBlown = false;
+  let audioStream = null;
+  let audioCtx = null;
+  let blowAnimationId = null;
 
   function switchStage(fromStage, toStage, delay = 800) {
     fromStage.classList.replace('fade-in', 'fade-out');
@@ -252,7 +258,7 @@
     }, delay);
   }
 
-  // MATRIX CANVAS
+  // OPTIMIZED MATRIX CANVAS (requestAnimationFrame)
   const canvas = document.getElementById('matrixCanvas');
   const ctx = canvas.getContext('2d');
 
@@ -266,30 +272,55 @@
   const matrixChars = "I LOVE YOU ♥ Nguyễn Thị Tâm 05092001 HAPPY BIRTHDAY ";
   const fontSize = 16;
   let drops = [];
-  let matrixInterval = null;
+  let isMatrixRunning = false;
+  let lastMatrixDraw = 0;
 
   function initMatrix() {
     const columns = Math.floor(canvas.width / fontSize);
     drops = Array(columns).fill(1);
-    if (!matrixInterval) {
-      matrixInterval = setInterval(drawMatrix, 33);
-    }
+    isMatrixRunning = true;
+    requestAnimationFrame(drawMatrixLoop);
   }
 
-  function drawMatrix() {
-    ctx.fillStyle = "rgba(10, 10, 22, 0.1)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#ff73a1";
-    ctx.font = fontSize + "px Consolas, monospace";
+  // Sử dụng loop chuẩn RequestAnimationFrame để đạt 60fps mượt mà
+  function drawMatrixLoop(timestamp) {
+    if (!isMatrixRunning) return;
 
-    for (let i = 0; i < drops.length; i++) {
-      const text = matrixChars.charAt(Math.floor(Math.random() * matrixChars.length));
-      ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+    // Giới hạn tốc độ vẽ ~30fps để không quá ngốn GPU
+    if (timestamp - lastMatrixDraw > 33) {
+      ctx.fillStyle = "rgba(10, 10, 22, 0.15)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#ff73a1";
+      ctx.font = fontSize + "px Consolas, monospace";
 
-      if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
-        drops[i] = 0;
+      for (let i = 0; i < drops.length; i++) {
+        const text = matrixChars.charAt(Math.floor(Math.random() * matrixChars.length));
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+        drops[i]++;
       }
-      drops[i]++;
+      lastMatrixDraw = timestamp;
+    }
+
+    requestAnimationFrame(drawMatrixLoop);
+  }
+
+  function stopMatrix() {
+    isMatrixRunning = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function stopMicrophone() {
+    if (blowAnimationId) cancelAnimationFrame(blowAnimationId);
+    if (audioStream) {
+      audioStream.getTracks().forEach(track => track.stop());
+      audioStream = null;
+    }
+    if (audioCtx && audioCtx.state !== 'closed') {
+      audioCtx.close();
     }
   }
 
@@ -297,14 +328,16 @@
     if (isBlown) return;
     isBlown = true;
 
+    stopMicrophone(); // Tắt Micro giải phóng CPU ngay lập tức
+
     flame.classList.add('off');
     bgMusic.play().catch(() => {});
 
-    confetti({ particleCount: 120, spread: 90, origin: { y: 0.6 } });
+    confetti({ particleCount: 100, spread: 80, origin: { y: 0.6 } });
     setTimeout(() => {
-      confetti({ particleCount: 80, spread: 100, origin: { x: 0.2, y: 0.5 } });
-      confetti({ particleCount: 80, spread: 100, origin: { x: 0.8, y: 0.5 } });
-    }, 300);
+      confetti({ particleCount: 60, spread: 90, origin: { x: 0.2, y: 0.5 } });
+      confetti({ particleCount: 60, spread: 90, origin: { x: 0.8, y: 0.5 } });
+    }, 250);
 
     initMatrix();
 
@@ -316,13 +349,13 @@
         
         setTimeout(() => {
           techHeartWrapper.classList.add('hidden');
-          confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } });
+          confetti({ particleCount: 120, spread: 90, origin: { y: 0.6 } });
 
           stage2Content.classList.remove('hidden');
           setTimeout(() => stage2Content.classList.replace('fade-out', 'fade-in'), 50);
 
           setTimeout(() => {
-            clearInterval(matrixInterval);
+            stopMatrix(); // Dừng hiệu ứng Matrix giải phóng RAM/GPU
             switchStage(stage2, stage3);
           }, 4500);
 
@@ -334,11 +367,12 @@
 
   document.getElementById('candle').addEventListener('click', triggerBirthday);
 
-  // MICROPHONE BLOW DETECT
+  // MICROPHONE BLOW DETECT (Tối ưu đóng stream sau khi sử dụng)
   navigator.mediaDevices?.getUserMedia({ audio: true }).then(stream => {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const mic = audioContext.createMediaStreamSource(stream);
-    const analyser = audioContext.createAnalyser();
+    audioStream = stream;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const mic = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
     analyser.fftSize = 256;
     mic.connect(analyser);
 
@@ -351,7 +385,7 @@
       if (average > 45) { 
         triggerBirthday();
       } else {
-        requestAnimationFrame(checkBlow);
+        blowAnimationId = requestAnimationFrame(checkBlow);
       }
     }
     checkBlow();
@@ -378,12 +412,10 @@
     const randomIndex = Math.floor(Math.random() * gifts.length);
     const segmentDegree = 360 / gifts.length;
 
-    // Lệch ngẫu nhiên trong khoảng từ 10 đến 80 độ bên trong ô quà
     const padding = 10; 
     const randomOffsetInSegment = Math.floor(Math.random() * (segmentDegree - padding * 2)) + padding;
     const targetAngle = (randomIndex * segmentDegree) + randomOffsetInSegment;
 
-    // Số vòng xoay ngẫu nhiên (5 đến 8 vòng)
     const randomRounds = (Math.floor(Math.random() * 4) + 5) * 360; 
 
     currentRotation += randomRounds + (targetAngle - (currentRotation % 360));
@@ -392,7 +424,7 @@
 
     setTimeout(() => {
       result.innerText = "🎉 Bé iu nhận được: " + gifts[randomIndex];
-      confetti({ particleCount: 90, spread: 80, origin: { y: 0.7 } });
+      confetti({ particleCount: 80, spread: 80, origin: { y: 0.7 } });
       isSpinning = false;
     }, 4000);
   }
@@ -401,7 +433,7 @@
     const input = document.getElementById('wishInput');
     if (input.value.trim() !== "") {
       alert("✨ Điều ước: \"" + input.value + "\" đã được gửi lên bầu trời sao! Mong mọi mong ước của bé iu đều thành hiện thực! 💖");
-      confetti({ particleCount: 90, spread: 100, origin: { y: 0.8 } });
+      confetti({ particleCount: 80, spread: 90, origin: { y: 0.8 } });
       input.value = "";
     }
   }
